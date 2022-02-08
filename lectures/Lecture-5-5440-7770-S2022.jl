@@ -30,7 +30,7 @@ md"""
 
 In this lecture, we will:
 
-1. Introduce Gibbs energy minimization and partial molar Gibbs energy for multiple coupled reactions
+1. Introduce Gibbs energy minimization and partial molar Gibbs energy
 2. Compute the reversibility of multiple coupled enzyme-catalyzed reactions
 
 Discussion problem:
@@ -54,7 +54,7 @@ __Assumptions__
 md"""
 ##### Theory
 
-The problem asks us to use the Direct Gibbs Energy Minimization (DGEM) approach. For multiple reactions, the Gibbs expression:
+To solve this problem, we first need to set up the problem we are trying to solve. The problem asks us to use the Direct Gibbs Energy Minimization (DGEM) approach. For multiple reactions, the Gibbs expression:
 
 $$\hat{G} = \sum_{i=1}^{\mathcal{M}}\bar{G}_{i}n_{i}$$
 
@@ -64,13 +64,11 @@ $$\frac{\left(\hat{G}-\sum_{i=1}^{\mathcal{M}}n_{i}^{\circ}G_{i}^{\circ}\right)}
 
 where the number of mol for species _i_ is given by:
 
-$$n_{i} = n_{i}^{\circ} + \sum_{r=1}^{\mathcal{R}}\sigma_{ir}\epsilon_{r}\qquad{i=1,2,\dots,\mathcal{M}}$$
+$$n_{i} = n_{i}^{\circ} + \sum_{r=1}^{\mathcal{R}}\sigma_{ir}\epsilon_{r}$$. 
 
 The quantity $\Delta{G}^{\circ}_{j}$ denotes the Gibbs energy of reaction for reaction _j_ (units: kJ/mmol), and $\hat{a}_{i}$ denotes the ratio of fugacity for component _i_, which (after the assumption of an ideal solution) becomes: $$\ln\hat{a}_{i} = x_{i}$$ where $x_{i}$ denotes the mol fraction of component _i_.
 
-To estimate the equilibrium extent _vector_ we minimize Gibbs energy expression, subject to constraints. Our decision variables (what we are looking for) are the extents of reaction $\epsilon_{i},i=1,\dots,\mathcal{R}$ subject to bounds on each extent $\epsilon_{i}\in\left[0,\star\right],\forall{i}$ and $n_{i}\geq{0},\forall{i}$.
-
-We implement $\epsilon_{i}\in\left[0,\star\right]$ as a box constraint, and $n_{i}\geq{0}$ using a [Penalty Method](https://en.wikipedia.org/wiki/Penalty_method).
+To estimate the equilibrium extent _vector_ we minimize Gibbs energy expression, subject to constraints. Our decision variables (what we are looking for) are the extents of reaction $\epsilon_{i},i=1,\dots,\mathcal{R}$. In this case the constraints are bounds on each extent $\epsilon_{i}\in\left[0,\star\right],\forall{i}$ and $n_{i}\geq{0},\forall{i}$.
 
 """
 
@@ -140,11 +138,11 @@ R = 8.314*(1/1000)*(1/ΔG_sf); # units: kJ/nmol-K
 
 # ╔═╡ 38a645d9-688e-4794-9c8f-98e8ec5b6516
 md"""
-### Discussion problem (experimental)
+### Discussion problem
 
 Compute the metabolic flux distribution for upper glycolysis using Direct Gibbs Energy Minimization (DGEM) 
 for the first five reactions of glycolysis. The reactions operate in an open logical control volume with a single input (s=1) and a single output (s=2). Let the rate of glucose input into the logical control volume be $\dot{n}_{1,1}=1077$ nmol/time and the rate of ATP input $\dot{n}_{3,1} = 2000$ nmol/time. All other components
-enter the logical control volume at 1.0 nmol/time. All components can exit the logical control volume. 
+enter the logical control volume at 0.1 nmol/time. All components can exit the logical control volume. 
 
 __Compute__
 * The open extent of reaction $\dot{\epsilon}_{i}~\forall{i}$ using a DGEM approach for an _unbounded_ exit stream and unbounded extent ($\dot{\epsilon}_{i}\geq{0}~\forall{i}$).
@@ -218,7 +216,7 @@ begin
 	(ℳₒ,ℛₒ) = size(Sₒ)
 	
 	# what are my initial condtions?
-	n_dot_in_array = 0.01*ones(ℳₒ)
+	n_dot_in_array = 0.1*ones(ℳₒ)
 	n_dot_in_array[1] = 1077.0 					# 1 gluc nmol/time
 	n_dot_in_array[3] = 2000.0 					# 3 atp nmol/time
 	open_parameters_dict["n_dot_in_array"] = n_dot_in_array
@@ -227,7 +225,7 @@ begin
 	n_dot_out_upper_bound_array = 100000.0*ones(ℳₒ)
 	
 	# uncomment me to impose upper bound for DHAP -
-	n_dot_out_upper_bound_array[7] = 5.0
+	# n_dot_out_upper_bound_array[7] = 5.0
 	open_parameters_dict["n_dot_out_upper_bound_array"] = n_dot_out_upper_bound_array
 
 	# show -
@@ -253,7 +251,7 @@ md"""
 We'll discuss enzyme kinetics and the origin of the bounds conditions. In particular, we'll look at:
 
 * The assumptions that underly [Michaelis-Menten kinetics](https://en.wikipedia.org/wiki/Michaelis–Menten_kinetics) (and the derivation)
-* The [MWC](https://en.wikipedia.org/wiki/Monod-Wyman-Changeux_model) and [Sequential](https://en.wikipedia.org/wiki/Sequential_model) models for allosteric enzyme kinetics
+* The [MWC kinetics](https://en.wikipedia.org/wiki/Monod-Wyman-Changeux_model) model for allosteric enzymes
 * Developing our approach to modeling enzyme kinetics (it's going to be crazy awesome!)
 """
 
@@ -285,28 +283,19 @@ function objective_function_open(ϵ, parameters)
 	# compute the objective value -
 	𝒪 = sum(n_dot_out.*G_bar)
 
-	# setup non-negative penalty term array -
-	penalty_terms_array_1 = Array{Float64,1}()
-	for species_index ∈ 1:ℳ
-
-		penalty_term = max(0,-1*tmp[species_index])^2
-		push!(penalty_terms_array_1, penalty_term)
-	end
-	𝒫₁ = sum(penalty_terms_array_1);
-	
 	# setup penality term array -
-	penalty_terms_array_2 = Array{Float64,1}()
+	penalty_terms_array = Array{Float64,1}()
 	for species_index = 1:ℳ
 
 		# compute the tmp term -
 		tmp_term = (n_dot_out[species_index] - UB_ndot_out[species_index])		
 		penalty_term = max(0,tmp_term)^2
-		push!(penalty_terms_array_2, penalty_term)
+		push!(penalty_terms_array, penalty_term)
 	end
-	𝒫₂ = sum(penalty_terms_array_2);
+	𝒫 = sum(penalty_terms_array);
 
 	# return -
-	return 𝒪 + 10*(𝒫₁ + 𝒫₂)
+	return 𝒪 + 10*𝒫
 end
 
 # ╔═╡ 7b1df4fa-51eb-4558-b808-f4a8e7433af8
@@ -319,7 +308,7 @@ begin
 	Uₒ = 1000000.0*ones(ℛₒ)
 
 	# set the initial extent -
-	ϵₒ = 0.1*ones(ℛₒ)
+	ϵₒ = 0.001*ones(ℛₒ)
 	
 	# setup the objective function -
 	OF_open(p) = objective_function_open(p, open_parameters_dict)
@@ -342,16 +331,15 @@ with_terminal() do
 	
 
 	# make the data table array -
-	data_table_array = Array{Any,2}(undef,ℛₒ,3)
+	data_table_array = Array{Any,2}(undef,ℛₒ,2)
 	for reaction_index = 1:ℛₒ
 		data_table_array[reaction_index,1] = reaction_string_array[reaction_index]
 		data_table_array[reaction_index,2] = ϵ[reaction_index]
-		data_table_array[reaction_index,3] = ϵ[reaction_index]*(1/V)*(1e3/1e9)
 	end
 
 	# setup pretty table -
 	# header row -
-	path_table_header_row = (["Reaction","ϵdot","flux"],["","nmol/time", "mM/time"]);
+	path_table_header_row = (["Reaction","ϵdot"],["","mol/time"]);
 
 	# write the table -
 	pretty_table(data_table_array; header=path_table_header_row)
@@ -366,18 +354,17 @@ with_terminal() do
 	n = n_initial_array + S*ϵ
 
 	# setp table_data_array -
-	table_data_array = Array{Any,2}(undef,ℳ,4)
+	table_data_array = Array{Any,2}(undef,ℳ,3)
 	species_array = ["glucose","g6p","atp","adp","f6p","f16bp","dhap","ga3p"]
 	for species_index = 1:ℳ
 		table_data_array[species_index,1] = species_array[species_index]
 		table_data_array[species_index,2] = n_initial_array[species_index]
 		table_data_array[species_index,3] = n[species_index]
-		table_data_array[species_index,4] = n[species_index] - n_initial_array[species_index]
 	end
 	
 	# setup pretty table -
 	# header row -
-	path_table_header_row = (["Species","n_dot_in","n_dot_out","dnᵢ/dt"],["","nmol/time","nmol/time","nmol/time"]);
+	path_table_header_row = (["Species","n_dot_in","n_dot_out"],["","nmol/time","nmol/time"]);
 
 	# write the table -
 	pretty_table(table_data_array; header=path_table_header_row)
@@ -404,17 +391,8 @@ function objective_function_closed(ϵ,parameters)
 	activity_terms = log.(x_array)
 	term_2 = sum(n_array.*activity_terms)
 
-	# setup non-negative penalty term array -
-	penalty_terms_array_1 = Array{Float64,1}()
-	for species_index ∈ 1:ℳ
-
-		penalty_term = max(0,-1*tmp[species_index])^2
-		push!(penalty_terms_array_1, penalty_term)
-	end
-	𝒫₁ = sum(penalty_terms_array_1);
-
 	# return -
-	return (term_1 + term_2) + 10*𝒫₁
+	return (term_1 + term_2)
 end
 
 # ╔═╡ 2777bfbf-122a-4344-a15c-30ac7dd3fcfb
@@ -451,32 +429,19 @@ with_terminal() do
 	G_formation_array = parameters_dict["G_formation_array"]
 	ΔG_rxn = transpose(S)*G_formation_array
 
-	# compute the equlibrium constant -
-	n_final = n_initial_array + S*ϵ
-
-	# compute the final mol fraction -
-	ln_x_final = log.((1/sum(n_final)).*n_final)
-
 	# make the data table array -
-	data_table_array = Array{Any,2}(undef,ℛ,7)
+	data_table_array = Array{Any,2}(undef,ℛ,5)
 	for reaction_index = 1:ℛ
 		data_table_array[reaction_index,1] = reaction_string_array[reaction_index]
 		data_table_array[reaction_index,2] = ΔG_rxn[reaction_index]*(ΔG_sf)
 		data_table_array[reaction_index,3] = ϵ[reaction_index]
-		data_table_array[reaction_index,4] = ϵ[reaction_index]*(1/n_initial_array[1])
-
-		# compute the Keq -
-		tmp = dot(S[:,reaction_index],ln_x_final)
-		K_eq = exp(tmp)
-
-		data_table_array[reaction_index,5] = K_eq
-		data_table_array[reaction_index,6] = exp(-ΔG_rxn[reaction_index]/(R*T))
-		data_table_array[reaction_index,7] = sign(ΔG_rxn[reaction_index]/(R*T)) == 1 ? true : false
+		data_table_array[reaction_index,4] = exp(-ΔG_rxn[reaction_index]/(R*T))
+		data_table_array[reaction_index,5] = sign(ΔG_rxn[reaction_index]/(R*T)) == 1 ? true : false
 	end
 
 	# setup pretty table -
 	# header row -
-	path_table_header_row = (["Reaction","ΔG_rxn","ϵ", "ϵ-scaled", "Keq (ϵ)", "Keq (ΔG)","reversible"],["","kJ/mol-K","nmol", "AU","","", "Bool"]);
+	path_table_header_row = (["Reaction","ΔG_rxn","ϵ", "Keq", "reversible"],["","kJ/mol-K","nmol", "", "Bool"]);
 
 	# write the table -
 	pretty_table(data_table_array; header=path_table_header_row)
@@ -595,7 +560,7 @@ PrettyTables = "~1.3.1"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.7.2"
+julia_version = "1.7.1"
 manifest_format = "2.0"
 
 [[deps.AbstractPlutoDingetjes]]
@@ -1607,9 +1572,9 @@ version = "0.9.1+5"
 """
 
 # ╔═╡ Cell order:
-# ╟─a0aca432-86ce-11ec-3668-679d09123b86
-# ╟─552ffec5-d763-467f-a29d-eadf1bad6437
-# ╟─767ac9c4-3452-4f85-8de2-5b49001abc92
+# ╠═a0aca432-86ce-11ec-3668-679d09123b86
+# ╠═552ffec5-d763-467f-a29d-eadf1bad6437
+# ╠═767ac9c4-3452-4f85-8de2-5b49001abc92
 # ╟─384f1569-b77e-4b7c-b559-01bc70b0ed89
 # ╠═e391a136-dbc2-4b56-b758-a1449db46693
 # ╠═02d20bb5-d7d6-4435-9091-be6b65b10d5c
@@ -1619,7 +1584,7 @@ version = "0.9.1+5"
 # ╠═d1178ff2-ef25-4f0f-9f58-e69bb8908f9a
 # ╠═02f2c64c-9e93-4d79-966d-e7de429317d8
 # ╟─38a645d9-688e-4794-9c8f-98e8ec5b6516
-# ╟─77c6925b-6588-4702-8d1d-5de05316d722
+# ╠═77c6925b-6588-4702-8d1d-5de05316d722
 # ╟─68be4ebd-54b5-4f86-b467-1e06c681aaa2
 # ╠═c7c4218a-4c6f-48f4-9cca-76a2db9cd1d9
 # ╠═7b1df4fa-51eb-4558-b808-f4a8e7433af8
