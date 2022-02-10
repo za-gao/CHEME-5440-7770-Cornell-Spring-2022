@@ -227,7 +227,7 @@ begin
 	n_dot_out_upper_bound_array = 100000.0*ones(ℳₒ)
 	
 	# uncomment me to impose upper bound for DHAP -
-	n_dot_out_upper_bound_array[7] = 5.0
+	#n_dot_out_upper_bound_array[7] = 5.0
 	open_parameters_dict["n_dot_out_upper_bound_array"] = n_dot_out_upper_bound_array
 
 	# show -
@@ -595,7 +595,7 @@ PrettyTables = "~1.3.1"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.7.2"
+julia_version = "1.7.1"
 manifest_format = "2.0"
 
 [[deps.AbstractPlutoDingetjes]]
